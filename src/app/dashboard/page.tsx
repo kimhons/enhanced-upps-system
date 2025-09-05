@@ -48,6 +48,13 @@ export default function Dashboard() {
       router.push('/auth/signin')
       return
     }
+    
+    // Check if disclaimer has been accepted
+    const disclaimerAccepted = localStorage.getItem('disclaimerAccepted')
+    if (!disclaimerAccepted) {
+      router.push('/auth/disclaimer')
+      return
+    }
     fetchPredictions()
   }, [user, router])
 

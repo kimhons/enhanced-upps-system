@@ -151,6 +151,16 @@ export default function SignIn() {
               </div>
             )}
 
+            {/* Legal Disclaimer */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+              <p className="text-yellow-800 text-sm">
+                <strong>By signing in, you agree to our</strong>{' '}
+                <Link href="/terms" className="underline hover:text-yellow-900">Terms of Service</Link>.
+                PatternSight is for entertainment and educational purposes only. All purchases are final and non-refundable. 
+                You must be 18+ to use this service.
+              </p>
+            </div>
+
             {/* Submit Button */}
             <button
               type="submit"

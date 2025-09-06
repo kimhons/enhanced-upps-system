@@ -23,6 +23,16 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
+import { 
+  SUBSCRIPTION_TIERS, 
+  ADDON_PRODUCTS, 
+  getUserTier, 
+  canGeneratePrediction, 
+  getRemainingPredictions,
+  getUpgradeMessage,
+  formatPrice,
+  getTierColor
+} from '@/lib/subscription-tiers'
 
 // Lottery games configuration
 const LOTTERY_GAMES = {
@@ -120,6 +130,11 @@ interface PredictionResult {
 export default function Dashboard() {
   const { user, userProfile, signOut } = useAuth()
   const router = useRouter()
+  
+  // Get user's subscription tier (default to lite for demo)
+  const userTier = getUserTier(userProfile?.subscription_tier || 'lite')
+  const userAddons = userProfile?.active_addons || []
+  
   const [predictions, setPredictions] = useState<PredictionResult[]>([
     {
       id: '1',
@@ -149,7 +164,6 @@ export default function Dashboard() {
   const [selectedGameId, setSelectedGameId] = useState('powerball')
   const [dailyUsage, setDailyUsage] = useState(2)
   const [totalPredictions, setTotalPredictions] = useState(2)
-  const [dailyLimit] = useState(3) // Pattern Lite limit
 
   useEffect(() => {
     if (!user) {
@@ -177,7 +191,7 @@ export default function Dashboard() {
   }
 
   const generatePrediction = async () => {
-    if (dailyUsage >= dailyLimit) {
+    if (!canGeneratePrediction(dailyUsage, userTier)) {
       return
     }
 
@@ -274,7 +288,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-slate-400 text-sm">Daily Usage</p>
-                    <p className="text-2xl font-bold text-white">{dailyUsage}/{dailyLimit}</p>
+                    <p className="text-2xl font-bold text-white">{dailyUsage}/{userTier.dailyPredictions}</p>
                   </div>
                   <BarChart3 className="h-8 w-8 text-amber-400" />
                 </div>
@@ -333,7 +347,7 @@ export default function Dashboard() {
 
                 <button
                   onClick={generatePrediction}
-                  disabled={generating || dailyUsage >= dailyLimit}
+                  disabled={generating || !canGeneratePrediction(dailyUsage, userTier)}
                   className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 disabled:from-gray-500 disabled:to-gray-600 text-indigo-900 font-bold py-3 px-8 rounded-xl transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
                 >
                   {generating ? (
@@ -349,9 +363,9 @@ export default function Dashboard() {
                   )}
                 </button>
 
-                {dailyUsage >= dailyLimit && (
+                {!canGeneratePrediction(dailyUsage, userTier) && (
                   <p className="text-amber-400 text-sm mt-2">
-                    Daily limit reached. Upgrade for more predictions!
+                    Daily limit reached. {getUpgradeMessage(userTier)}
                   </p>
                 )}
               </div>
@@ -425,7 +439,7 @@ export default function Dashboard() {
                     <Moon className="h-5 w-5 text-purple-400" />
                     <div>
                       <p className="text-white text-sm font-medium">Cosmic Intelligence</p>
-                      <p className="text-slate-400 text-xs">$9.99/month</p>
+                      <p className="text-slate-400 text-xs">$5.99/month</p>
                     </div>
                   </div>
                   <span className="text-slate-500 text-xs">Inactive</span>
@@ -436,7 +450,7 @@ export default function Dashboard() {
                     <Brain className="h-5 w-5 text-blue-400" />
                     <div>
                       <p className="text-white text-sm font-medium">Claude Nexus Intelligence</p>
-                      <p className="text-slate-400 text-xs">$14.99/month</p>
+                      <p className="text-slate-400 text-xs">$5.99/month</p>
                     </div>
                   </div>
                   <span className="text-slate-500 text-xs">Inactive</span>
@@ -447,7 +461,7 @@ export default function Dashboard() {
                     <Gem className="h-5 w-5 text-pink-400" />
                     <div>
                       <p className="text-white text-sm font-medium">Premium Enhancement</p>
-                      <p className="text-slate-400 text-xs">$19.99/month</p>
+                      <p className="text-slate-400 text-xs">$5.99/month</p>
                     </div>
                   </div>
                   <span className="text-slate-500 text-xs">Inactive</span>
@@ -474,15 +488,15 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Current Plan</span>
-                  <span className="text-white font-medium">Pattern Lite</span>
+                  <span className={`font-medium ${getTierColor(userTier.id)}`}>{userTier.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Monthly Cost</span>
-                  <span className="text-white font-medium">$0</span>
+                  <span className="text-white font-medium">{formatPrice(userTier.price)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Daily Limit</span>
-                  <span className="text-white font-medium">3 analyses</span>
+                  <span className="text-white font-medium">{userTier.dailyPredictions} analyses</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Status</span>
@@ -490,16 +504,18 @@ export default function Dashboard() {
                 </div>
               </div>
               
-              <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                <p className="text-amber-400 text-sm font-medium">Upgrade for More!</p>
-                <p className="text-amber-300 text-xs mt-1">Get unlimited analyses and premium features</p>
-              </div>
+              {userTier.id !== 'elite' && (
+                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <p className="text-amber-400 text-sm font-medium">Upgrade for More!</p>
+                  <p className="text-amber-300 text-xs mt-1">{getUpgradeMessage(userTier)}</p>
+                </div>
+              )}
               
               <button 
                 onClick={() => handleNavigation('/pricing')}
                 className="w-full mt-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-indigo-900 font-bold py-2 px-4 rounded-lg transition-all"
               >
-                Upgrade Plan
+                {userTier.id === 'elite' ? 'Manage Plan' : 'Upgrade Plan'}
               </button>
             </motion.div>
 

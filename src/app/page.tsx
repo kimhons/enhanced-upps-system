@@ -202,24 +202,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Brief Disclaimer Section */}
-      <section className="bg-yellow-50 border-l-4 border-yellow-400 py-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-1" />
-            <div>
-              <h3 className="text-lg font-bold text-yellow-800 mb-2">IMPORTANT DISCLAIMER</h3>
-              <p className="text-yellow-700 mb-2">
-                <strong>For Entertainment and Educational Purposes Only.</strong> PatternSight is a mathematical analysis tool designed to explore lottery patterns and demonstrate AI capabilities. <strong>No system can predict lottery outcomes</strong>, which are random by design. All purchases are final and non-refundable.
-              </p>
-              <p className="text-yellow-700 text-sm">
-                By using this service, you agree to our <Link href="/terms" className="underline hover:text-yellow-800">Terms of Service</Link> and acknowledge you are 18+ years old. Please play responsibly.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Stats Section */}
       <section className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4">
@@ -572,12 +554,15 @@ export default function HomePage() {
                 <li><Link href="/help" className="hover:text-white transition-colors">Help Center</Link></li>
                 <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link></li>
                 <li><Link href="/terms" className="hover:text-white transition-colors">Terms</Link></li>
+                <li className="text-xs text-gray-500 pt-2">
+                  For entertainment only. No system can predict lottery outcomes. All purchases non-refundable. 18+ only.
+                </li>
               </ul>
             </div>
           </div>
           
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2025 PatternSight by AlienNova. All rights reserved.</p>
+            <p>&copy; 2025 PatternSight. All rights reserved.</p>
           </div>
         </div>
       </footer>

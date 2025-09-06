@@ -10,13 +10,24 @@ export const getStripe = (): Promise<Stripe | null> => {
   return stripePromise;
 };
 
-// Server-side Stripe instance
-import StripeServer from 'stripe';
+// Server-side Stripe instance (only import on server)
+let serverStripe: any = null;
 
-export const stripe = new StripeServer(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-  typescript: true,
-});
+export const getServerStripe = () => {
+  if (typeof window !== 'undefined') {
+    throw new Error('Server-side Stripe should not be used on the client');
+  }
+  
+  if (!serverStripe) {
+    const StripeServer = require('stripe');
+    serverStripe = new StripeServer(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2024-06-20',
+      typescript: true,
+    });
+  }
+  
+  return serverStripe;
+};
 
 // Price configurations
 export const PRICE_IDS = {

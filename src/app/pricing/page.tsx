@@ -19,9 +19,154 @@ import {
   Users,
   Headphones
 } from 'lucide-react';
+import { getStripe } from '@/lib/stripe';
+import { SUBSCRIPTION_TIERS, getPriceId, getPrice } from '@/lib/subscription-tiers';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function PricingPage() {
-  const [billingCycle, setBillingCycle] = useState('monthly');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [loading, setLoading] = useState<string | null>(null);
+  const { user } = useAuth();
+
+  const handleUpgrade = async (tierId: string, cycle: 'monthly' | 'yearly') => {
+    setLoading(`${tierId}-${cycle}`);
+    
+    try {
+      // Check if user is authenticated
+      if (!user) {
+        // Redirect to sign in page
+        window.location.href = '/auth/signin?redirect=/pricing';
+        return;
+      }
+
+      // Get the subscription tier
+      const tier = SUBSCRIPTION_TIERS[tierId];
+      if (!tier) {
+        throw new Error('Invalid subscription tier');
+      }
+
+      // Get the price ID for the selected billing cycle
+      const priceId = getPriceId(tier, cycle);
+      
+      if (!priceId) {
+        throw new Error('Price ID not found for this tier and billing cycle');
+      }
+
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId,
+          userId: user.id,
+          userEmail: user.email,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const { sessionId, url } = await response.json();
+
+      if (url) {
+        window.location.href = url;
+      } else {
+        const stripe = await getStripe();
+        await stripe?.redirectToCheckout({ sessionId });
+      }
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      alert('Failed to start checkout. Please try again.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const renderPricingCard = (tierId: string, index: number) => {
+    const tier = SUBSCRIPTION_TIERS[tierId];
+    const price = getPrice(tier, billingCycle);
+    const isPopular = tierId === 'pro';
+    const isFree = tierId === 'lite';
+    
+    return (
+      <motion.div
+        key={tierId}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.1 }}
+        className={`p-8 rounded-xl ${
+          isPopular 
+            ? 'bg-gradient-to-br from-orange-500 to-red-500 text-white relative transform scale-105' 
+            : 'bg-white border border-gray-200 shadow-sm'
+        }`}
+      >
+        {isPopular && (
+          <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+            <span className="bg-yellow-400 text-yellow-900 px-4 py-1 rounded-full text-sm font-bold">
+              Most Popular
+            </span>
+          </div>
+        )}
+        
+        <div className="text-center mb-8">
+          <h3 className={`text-2xl font-bold mb-2 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+            {tier.name}
+          </h3>
+          <div className={`text-4xl font-bold mb-2 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+            {isFree ? 'FREE' : `$${price.toFixed(2)}`}
+          </div>
+          <div className={isPopular ? 'text-orange-100' : 'text-gray-600'}>
+            {isFree ? 'Forever' : billingCycle === 'monthly' ? 'per month' : 'per year'}
+          </div>
+          {!isFree && billingCycle === 'yearly' && (
+            <div className={`text-sm font-semibold ${isPopular ? 'text-yellow-300' : 'text-green-600'}`}>
+              Save {Math.round(((tier.price * 12 - tier.yearlyPrice) / (tier.price * 12)) * 100)}%
+            </div>
+          )}
+        </div>
+        
+        <div className="mb-8">
+          <div className={`text-lg font-semibold mb-4 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+            {tier.dailyPredictions} analyses per day
+          </div>
+          <ul className="space-y-3">
+            {tier.features.map((feature, featureIndex) => (
+              <li key={featureIndex} className="flex items-center space-x-2">
+                <Check className={`w-4 h-4 ${isPopular ? 'text-orange-200' : 'text-green-500'}`} />
+                <span className={`text-sm font-semibold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                  {feature}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        
+        {isFree ? (
+          <Link 
+            href="/auth/signup"
+            className="w-full bg-gray-100 text-gray-700 py-3 px-6 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-center block"
+          >
+            Get Started Free
+          </Link>
+        ) : (
+          <button
+            onClick={() => handleUpgrade(tierId, billingCycle)}
+            disabled={loading === `${tierId}-${billingCycle}`}
+            className={`w-full py-3 px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              isPopular 
+                ? 'bg-white text-orange-500 hover:bg-gray-100' 
+                : 'bg-orange-500 text-white hover:bg-orange-600'
+            }`}
+          >
+            {loading === `${tierId}-${billingCycle}` ? 'Loading...' : 'Upgrade Now'}
+          </button>
+        )}
+      </motion.div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -49,16 +194,8 @@ export default function PricingPage() {
             </nav>
 
             <div className="flex items-center space-x-4">
-              <Link 
-                href="/auth/signin" 
-                className="text-gray-700 hover:text-orange-500 transition-colors"
-              >
-                Sign In
-              </Link>
-              <Link 
-                href="/dashboard" 
-                className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-2 rounded-lg font-semibold hover:from-orange-600 hover:to-red-600 transition-colors"
-              >
+              <Link href="/auth/signin" className="text-gray-700 hover:text-orange-500 transition-colors">Sign In</Link>
+              <Link href="/auth/signup" className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
                 Get Started
               </Link>
             </div>
@@ -67,15 +204,15 @@ export default function PricingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 py-20 text-white">
-        <div className="max-w-7xl mx-auto px-4 text-center">
+      <section className="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white py-20">
+        <div className="max-w-7xl mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            className="text-center"
           >
-            <h1 className="text-5xl md:text-6xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-orange-400 to-red-500 bg-clip-text text-transparent">
+            <h1 className="text-5xl md:text-7xl font-bold mb-6">
+              <span className="bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent">
                 Simple Pricing
               </span>
             </h1>
@@ -93,7 +230,7 @@ export default function PricingPage() {
                 <div className={`w-5 h-5 bg-white rounded-full transition-transform ${billingCycle === 'yearly' ? 'translate-x-7' : 'translate-x-0'}`} />
               </button>
               <span className={`${billingCycle === 'yearly' ? 'text-white' : 'text-purple-300'}`}>
-                Yearly <span className="text-green-400 text-sm">(Save 20%)</span>
+                Yearly <span className="text-green-400 text-sm">(Save 17%)</span>
               </span>
             </div>
           </motion.div>
@@ -104,344 +241,9 @@ export default function PricingPage() {
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            {/* Free Plan */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm"
-            >
-              <div className="text-center mb-8">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Pattern Lite</h3>
-                <div className="text-4xl font-bold text-gray-900 mb-2">FREE</div>
-                <div className="text-gray-600">Forever</div>
-              </div>
-              
-              <div className="mb-8">
-                <div className="text-lg font-semibold text-gray-900 mb-4">3 analyses per day</div>
-                <ul className="space-y-3">
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Basic pattern analysis</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">10 mathematical pillars</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Community access</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Email support</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <X className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm text-gray-700 font-medium">AI add-ons</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <Link 
-                href="/auth/signup"
-                className="w-full bg-gray-100 text-gray-700 py-3 px-6 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-center block"
-              >
-                Get Started Free
-              </Link>
-            </motion.div>
-
-            {/* Starter Plan */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm"
-            >
-              <div className="text-center mb-8">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">Pattern Starter</h3>
-                <div className="text-4xl font-bold text-gray-900 mb-2">
-                  ${billingCycle === 'monthly' ? '9.99' : '95.90'}
-                </div>
-                <div className="text-gray-600">
-                  {billingCycle === 'monthly' ? 'per month' : 'per year'}
-                </div>
-                {billingCycle === 'yearly' && (
-                  <div className="text-green-600 text-sm font-semibold">Save $23.98/year</div>
-                )}
-              </div>
-              
-              <div className="mb-8">
-                <div className="text-lg font-semibold text-gray-900 mb-4">10 analyses per day</div>
-                <ul className="space-y-3">
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Enhanced pattern analysis</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Daily insights & reports</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Historical data access</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Priority email support</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Can purchase add-ons</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <Link 
-                href="/auth/signup"
-                className="w-full bg-orange-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-orange-600 transition-colors text-center block"
-              >
-                Start Free Trial
-              </Link>
-            </motion.div>
-
-            {/* Pro Plan - Most Popular */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="bg-gradient-to-br from-orange-500 to-red-500 p-8 rounded-xl text-white relative transform scale-105"
-            >
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                <span className="bg-yellow-400 text-yellow-900 px-4 py-1 rounded-full text-sm font-bold">
-                  Most Popular
-                </span>
-              </div>
-              
-              <div className="text-center mb-8">
-                <h3 className="text-2xl font-bold mb-2">Pattern Pro</h3>
-                <div className="text-4xl font-bold mb-2">
-                  ${billingCycle === 'monthly' ? '39.99' : '383.90'}
-                </div>
-                <div className="text-orange-100">
-                  {billingCycle === 'monthly' ? 'per month' : 'per year'}
-                </div>
-                {billingCycle === 'yearly' && (
-                  <div className="text-yellow-300 text-sm font-semibold">Save $95.98/year</div>
-                )}
-              </div>
-              
-              <div className="mb-8">
-                <div className="text-lg font-semibold mb-4">50 analyses per day</div>
-                <ul className="space-y-3">
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-sm">Advanced AI analysis</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-sm">Choose 2 add-ons included</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-sm">Detailed analytics dashboard</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-sm">Priority support</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-sm">Export capabilities</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <Link 
-                href="/auth/signup"
-                className="w-full bg-white text-orange-500 py-3 px-6 rounded-lg font-semibold hover:bg-gray-100 transition-colors text-center block"
-              >
-                Start Free Trial
-              </Link>
-            </motion.div>
-
-            {/* Elite Plan */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm"
-            >
-              <div className="text-center mb-8">
-                <div className="flex items-center justify-center mb-2">
-                  <Crown className="w-6 h-6 text-yellow-500 mr-2" />
-                  <h3 className="text-2xl font-bold text-gray-900">Pattern Elite</h3>
-                </div>
-                <div className="text-4xl font-bold text-gray-900 mb-2">
-                  ${billingCycle === 'monthly' ? '199.99' : '1919.90'}
-                </div>
-                <div className="text-gray-600">
-                  {billingCycle === 'monthly' ? 'per month' : 'per year'}
-                </div>
-                {billingCycle === 'yearly' && (
-                  <div className="text-green-600 text-sm font-semibold">Save $479.98/year</div>
-                )}
-              </div>
-              
-              <div className="mb-8">
-                <div className="text-lg font-semibold text-gray-900 mb-4">300 analyses per day</div>
-                <ul className="space-y-3">
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Maximum AI power</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">All 3 add-ons included</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">White-label options</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">VIP support & phone</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-900 font-semibold">Custom integrations</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <Link 
-                href="/auth/signup"
-                className="w-full bg-gray-900 text-white py-3 px-6 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center block"
-              >
-                Contact Sales
-              </Link>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Add-ons Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">
-              AI Enhancement Add-Ons
-            </h2>
-            <p className="text-xl text-gray-600 max-w-4xl mx-auto">
-              Enhance any subscription with powerful AI add-ons - $5.99/month each
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Cosmic Intelligence */}
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Moon className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">🌙 Cosmic Intelligence</h3>
-                <div className="text-2xl font-bold text-orange-500 mb-4">
-                  ${billingCycle === 'monthly' ? '5.99' : '57.50'}/
-                  {billingCycle === 'monthly' ? 'month' : 'year'}
-                </div>
-              </div>
-              <ul className="space-y-3 mb-8 text-sm text-gray-600">
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Lunar phase analysis</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Zodiac alignment patterns</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Numerological correlations</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Sacred geometry analysis</span>
-                </li>
-              </ul>
-              <button className="w-full bg-orange-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-orange-600 transition-colors">
-                Add to Plan
-              </button>
-            </div>
-
-            {/* Claude Nexus */}
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Brain className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">🧠 Claude Nexus</h3>
-                <div className="text-2xl font-bold text-purple-500 mb-4">
-                  ${billingCycle === 'monthly' ? '5.99' : '57.50'}/
-                  {billingCycle === 'monthly' ? 'month' : 'year'}
-                </div>
-              </div>
-              <ul className="space-y-3 mb-8 text-sm text-gray-600">
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>5-engine AI system</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Statistical reasoning engine</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Neural network analysis</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Quantum pattern recognition</span>
-                </li>
-              </ul>
-              <button className="w-full bg-purple-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-purple-600 transition-colors">
-                Add to Plan
-              </button>
-            </div>
-
-            {/* Premium Enhancement */}
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Crown className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">💎 Premium Enhancement</h3>
-                <div className="text-2xl font-bold text-pink-500 mb-4">
-                  ${billingCycle === 'monthly' ? '5.99' : '57.50'}/
-                  {billingCycle === 'monthly' ? 'month' : 'year'}
-                </div>
-              </div>
-              <ul className="space-y-3 mb-8 text-sm text-gray-600">
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Multi-model AI ensemble</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Predictive intelligence boost</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Market trend analysis</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <Check className="w-4 h-4 text-green-500" />
-                  <span>Priority processing</span>
-                </li>
-              </ul>
-              <button className="w-full bg-pink-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-pink-600 transition-colors">
-                Add to Plan
-              </button>
-            </div>
+            {Object.keys(SUBSCRIPTION_TIERS).map((tierId, index) => 
+              renderPricingCard(tierId, index)
+            )}
           </div>
         </div>
       </section>
@@ -494,39 +296,21 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-r from-orange-500 to-red-500">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-4xl font-bold text-white mb-6">
-            Ready to Start Your Analysis Journey?
-          </h2>
-          <p className="text-xl text-orange-100 mb-8">
-            Join thousands of users who trust PatternSight for advanced lottery analysis
-          </p>
-          <Link 
-            href="/dashboard"
-            className="bg-white text-orange-500 px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-colors inline-flex items-center space-x-2"
-          >
-            <Sparkles className="w-5 h-5" />
-            <span>Start Free Trial</span>
-            <ArrowRight className="w-5 h-5" />
-          </Link>
-        </div>
-      </section>
-
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
+      <footer className="bg-gray-900 text-white py-16">
         <div className="max-w-7xl mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-8 h-8 bg-gradient-to-r from-orange-400 to-red-500 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold">🔮</span>
+                <div className="w-10 h-10 bg-gradient-to-r from-orange-400 to-red-500 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">🔮</span>
                 </div>
-                <span className="text-xl font-bold">PatternSight</span>
+                <div>
+                  <div className="text-white font-bold text-xl">PatternSight</div>
+                </div>
               </div>
-              <p className="text-gray-400">
-                Where Mathematics Meets Possibility
+              <p className="text-gray-400 mb-4">
+                Where Mathematics Meets Possibility. Advanced lottery pattern analysis powered by AI.
               </p>
             </div>
             
@@ -535,7 +319,7 @@ export default function PricingPage() {
               <ul className="space-y-2 text-gray-400">
                 <li><Link href="/features" className="hover:text-white transition-colors">Features</Link></li>
                 <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-                <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
+                <li><Link href="/research" className="hover:text-white transition-colors">Research</Link></li>
               </ul>
             </div>
             
@@ -543,8 +327,8 @@ export default function PricingPage() {
               <h4 className="font-semibold mb-4">Company</h4>
               <ul className="space-y-2 text-gray-400">
                 <li><Link href="/about" className="hover:text-white transition-colors">About</Link></li>
-                <li><Link href="/research" className="hover:text-white transition-colors">Research</Link></li>
                 <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
+                <li><Link href="/careers" className="hover:text-white transition-colors">Careers</Link></li>
               </ul>
             </div>
             
